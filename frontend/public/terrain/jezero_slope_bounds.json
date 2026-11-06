@@ -1,0 +1,34 @@
+{
+    "image": "/terrain/jezero_slope_overlay.png",
+    "bounds": [
+        [
+            17.580519910544755,
+            76.99743706146002
+        ],
+        [
+            19.29018700686615,
+            78.58256332408818
+        ]
+    ],
+    "coordinate_system": "Mars equirectangular converted to longitude and latitude",
+    "mars_radius_metres": 3396190.0,
+    "standard_parallel_degrees": 18.4663,
+    "source": "USGS Mars 2020 CTX DEM",
+    "derived_layer": "Terrain slope in degrees",
+    "source_resolution": "20 metres",
+    "classification_degrees": [
+        0,
+        5,
+        15,
+        25,
+        35,
+        90
+    ],
+    "colours": [
+        "#163F35",
+        "#6B8E45",
+        "#D5B84A",
+        "#D9823B",
+        "#B9433F"
+    ]
+}
