@@ -34,7 +34,9 @@ import 'leaflet/dist/leaflet.css'
 // ASTRAL - ROUTE PLANNER
 // --------------------------------------------------
 
-const API_URL = 'http://127.0.0.1:8000/api/route/astar'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+
+const API_URL = `${API_BASE_URL}/api/route/astar`
 
 const OVERLAY_METADATA_URL =
     '/terrain/jezero_overlay_metadata.json'
@@ -247,11 +249,10 @@ function OverlayToggle({
             type="button"
             onClick={onToggle}
             aria-pressed={enabled}
-            className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition ${
-                enabled
+            className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition ${enabled
                     ? 'border-cyan-400/40 bg-cyan-400/10'
                     : 'border-white/10 bg-[#101b2b] hover:border-white/20'
-            }`}
+                }`}
         >
             <span
                 className="h-3 w-3 shrink-0 rounded-full"
@@ -269,14 +270,12 @@ function OverlayToggle({
             </span>
 
             <span
-                className={`relative h-5 w-9 shrink-0 rounded-full transition ${
-                    enabled ? 'bg-cyan-500' : 'bg-slate-700'
-                }`}
+                className={`relative h-5 w-9 shrink-0 rounded-full transition ${enabled ? 'bg-cyan-500' : 'bg-slate-700'
+                    }`}
             >
                 <span
-                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${
-                        enabled ? 'left-[18px]' : 'left-0.5'
-                    }`}
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${enabled ? 'left-[18px]' : 'left-0.5'
+                        }`}
                 />
             </span>
         </button>
@@ -307,11 +306,10 @@ function TerrainLegend({
             </div>
 
             <div
-                className={`h-2.5 rounded-full ${
-                    isSlope
+                className={`h-2.5 rounded-full ${isSlope
                         ? 'bg-gradient-to-r from-green-500 via-lime-400 via-yellow-400 via-orange-500 to-red-900'
                         : 'bg-gradient-to-r from-green-500 via-lime-400 via-yellow-400 via-orange-500 to-red-500'
-                }`}
+                    }`}
             />
 
             <div className="mt-2 flex justify-between text-[10px] text-slate-400">

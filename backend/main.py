@@ -1,4 +1,4 @@
-
+import os
 from pathlib import Path
 import math
 import csv
@@ -50,10 +50,19 @@ app = FastAPI(
     description="Terrain inspection and regional analysis for Jezero Crater on Mars.",
     version="1.1.0",
 )
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+]
+
+if FRONTEND_URL:
+    ALLOWED_ORIGINS.append(FRONTEND_URL)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
