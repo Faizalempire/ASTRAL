@@ -1,15 +1,25 @@
 
 import {
-  Mountain,
   Activity,
-  Layers3,
-  Database,
   AlertTriangle,
-  TrendingUp,
+  Crosshair,
+  Database,
   Gauge,
-  Map,
   Info,
+  Layers3,
+  Map,
+  Mountain,
+  TrendingUp,
 } from 'lucide-react'
+
+import type { TerrainResponse } from '../services/terrainService'
+
+type RegionalTerrainAnalysisProps = {
+  coordinates: [number, number] | null
+  result: TerrainResponse | null
+  loading: boolean
+  error: string | null
+}
 
 const elevation = {
   min: -3504.65,
@@ -25,99 +35,75 @@ const slope = {
   standardDeviation: 7.08,
 }
 
-const terrain = [
-  {
-    name: 'Gentle',
-    range: '0°–5°',
-    cost: 1,
-    percentage: 53.77,
-    area: 4850.43,
-    colour: '#163F35',
-    description: 'Relatively low-gradient surfaces',
-  },
-  {
-    name: 'Moderate',
-    range: '5°–15°',
-    cost: 2,
-    percentage: 38.06,
-    area: 3433.41,
-    colour: '#6B8E45',
-    description: 'Moderate surface inclination',
-  },
-  {
-    name: 'Steep',
-    range: '15°–25°',
-    cost: 5,
-    percentage: 6.07,
-    area: 547.10,
-    colour: '#D5B84A',
-    description: 'Increased terrain difficulty',
-  },
-  {
-    name: 'Very Steep',
-    range: '25°–35°',
-    cost: 10,
-    percentage: 1.11,
-    area: 100.38,
-    colour: '#D9823B',
-    description: 'High-gradient terrain',
-  },
-  {
-    name: 'Extremely Steep',
-    range: '35°+',
-    cost: 100,
-    percentage: 0.99,
-    area: 88.91,
-    colour: '#B9433F',
-    description: 'Very high-gradient terrain',
-  },
-]
-
 const totalPixels = 22564575
 const slopePixels = 22550602
 
-const formatNumber = (value: number) =>
-  value.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+const terrainClasses = [
+  {
+    name: 'Very Low',
+    description: 'Relatively smooth terrain',
+    percentage: 53.77,
+    area: 4850.43,
+    color: 'bg-emerald-400',
+  },
+  {
+    name: 'Low',
+    description: 'Generally traversable terrain',
+    percentage: 38.06,
+    area: 3433.41,
+    color: 'bg-lime-400',
+  },
+  {
+    name: 'Moderate',
+    description: 'Terrain requiring caution',
+    percentage: 6.07,
+    area: 547.10,
+    color: 'bg-yellow-400',
+  },
+  {
+    name: 'High',
+    description: 'Difficult terrain',
+    percentage: 1.11,
+    area: 100.38,
+    color: 'bg-orange-400',
+  },
+  {
+    name: 'Very High',
+    description: 'Potentially challenging terrain',
+    percentage: 0.99,
+    area: 88.91,
+    color: 'bg-red-400',
+  },
+]
 
-function MetricCard({
+function StatCard({
   label,
   value,
   unit,
   icon: Icon,
-  accent,
 }: {
   label: string
   value: string
   unit: string
   icon: typeof Mountain
-  accent: string
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-white/10 bg-[#080D18] p-4 transition-colors hover:border-cyan-500/30">
-      <div className="flex items-center gap-2">
-        <Icon size={16} className={accent} />
-        <span className="text-[10px] tracking-widest text-slate-500">
-          {label}
-        </span>
+    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm text-slate-400">{label}</p>
+        <Icon size={18} className="text-cyan-400" />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-baseline gap-2">
-        <p className="text-2xl font-semibold tracking-tight text-white">
-          {value}
-        </p>
+      <p className="text-2xl font-semibold tracking-tight text-white">
+        {value}
+      </p>
 
-        <span className="text-xs text-slate-500">
-          {unit}
-        </span>
-      </div>
+      <p className="mt-1 text-xs text-slate-500">{unit}</p>
     </div>
   )
 }
 
-function StatisticRow({
+function MetricRow({
   label,
   value,
 }: {
@@ -125,474 +111,419 @@ function StatisticRow({
   value: string
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-white/5 py-3 last:border-0">
-      <span className="text-xs text-slate-400">
-        {label}
-      </span>
-
-      <span className="text-sm font-mono text-white text-right">
-        {value}
-      </span>
+    <div className="flex items-center justify-between gap-4 border-b border-white/[0.06] py-3 last:border-0">
+      <span className="text-sm text-slate-400">{label}</span>
+      <span className="text-sm font-medium text-slate-200">{value}</span>
     </div>
   )
 }
 
-export default function RegionalTerrainAnalysis() {
+export default function RegionalTerrainAnalysis({
+  coordinates,
+  result,
+  loading,
+  error,
+}: RegionalTerrainAnalysisProps) {
+  const latitude = coordinates?.[0]
+  const longitude = coordinates?.[1]
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6 text-white">
 
-      {/* REGIONAL SUMMARY */}
-      <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#0D1727] p-5 md:p-6">
-
-        <div className="flex flex-wrap items-start justify-between gap-4">
-
-          <div>
-            <div className="flex items-center gap-2">
-              <Map size={15} className="text-cyan-400" />
-
-              <p className="text-[10px] tracking-[0.18em] text-cyan-400">
-                REGIONAL TERRAIN INTELLIGENCE
-              </p>
+      {/* PAGE HEADER */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 p-2">
+              <Mountain size={20} className="text-cyan-400" />
             </div>
 
-            <h3 className="mt-3 text-lg md:text-xl font-semibold text-white">
-              Jezero Crater — Surface Assessment
-            </h3>
-
-            <p className="mt-2 text-sm text-slate-400">
-              Statistical analysis of the available USGS CTX DEM coverage.
-            </p>
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">
+              ASTRAL / Terrain Intelligence
+            </span>
           </div>
 
-          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[10px] text-emerald-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            ANALYSIS AVAILABLE
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            Terrain Analysis
+          </h1>
+
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+            Analyse elevation, surface slope and terrain traversability
+            across the Jezero Crater study region on Mars.
+          </p>
+        </div>
+
+        <div className="flex w-fit items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          <span className="text-xs font-medium text-emerald-300">
+            Dataset validated
           </span>
+        </div>
+      </div>
 
+      {/* SELECTED LOCATION ANALYSIS */}
+      <section className="overflow-hidden rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-950/40 via-slate-900/80 to-slate-950">
+        <div className="flex flex-col gap-3 border-b border-white/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-2.5">
+              <Crosshair size={20} className="text-cyan-300" />
+            </div>
+
+            <div>
+              <h2 className="font-semibold text-white">
+                Selected Location Analysis
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                Point-specific terrain readings from the selected map location
+              </p>
+            </div>
+          </div>
+
+          {coordinates && (
+            <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300">
+              {Math.abs(latitude!).toFixed(5)}°
+              {latitude! >= 0 ? ' N' : ' S'}
+              {' / '}
+              {Math.abs(longitude!).toFixed(5)}°
+              {longitude! >= 0 ? ' E' : ' W'}
+            </div>
+          )}
         </div>
 
-        {/* KEY METRICS */}
-        <div
-          className="mt-6 grid gap-3"
-          style={{
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-          }}
-        >
-          <MetricCard
-            label="MEAN ELEVATION"
-            value={formatNumber(elevation.mean)}
-            unit="m"
-            icon={Mountain}
-            accent="text-orange-400"
-          />
+        <div className="p-5">
+          {!coordinates ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Map size={30} className="mb-3 text-slate-500" />
 
-          <MetricCard
-            label="MEAN SLOPE"
-            value={slope.mean.toFixed(2)}
-            unit="degrees"
-            icon={Activity}
-            accent="text-cyan-400"
-          />
+              <p className="font-medium text-slate-300">
+                No location selected
+              </p>
 
-          <MetricCard
-            label="MAXIMUM SLOPE"
-            value={slope.max.toFixed(2)}
-            unit="degrees"
-            icon={AlertTriangle}
-            accent="text-orange-400"
-          />
+              <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                Open Mars Explorer and click a location on the map or enter
+                coordinates. Its terrain readings will appear here.
+              </p>
+            </div>
+          ) : loading ? (
+            <div className="flex items-center justify-center gap-3 py-10">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-400/30 border-t-cyan-400" />
+              <p className="text-sm text-slate-300">
+                Analysing selected terrain location...
+              </p>
+            </div>
+          ) : error ? (
+            <div className="flex items-start gap-3 rounded-xl border border-red-400/20 bg-red-400/5 p-4">
+              <AlertTriangle
+                size={20}
+                className="mt-0.5 shrink-0 text-red-400"
+              />
+
+              <div>
+                <p className="text-sm font-medium text-red-300">
+                  Terrain analysis failed
+                </p>
+                <p className="mt-1 text-sm text-red-200/70">{error}</p>
+              </div>
+            </div>
+          ) : result ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <StatCard
+                  label="Elevation"
+                  value={`${Number(result.elevation_m).toFixed(2)}`}
+                  unit="Metres"
+                  icon={Mountain}
+                />
+
+                <StatCard
+                  label="Surface Slope"
+                  value={`${Number(result.slope_degrees).toFixed(2)}°`}
+                  unit="Degrees"
+                  icon={Activity}
+                />
+
+                <StatCard
+                  label="Traversability Cost"
+                  value={Number(result.traversability_cost).toFixed(2)}
+                  unit="Model-derived terrain cost"
+                  icon={Gauge}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Terrain classification
+                  </p>
+
+                  <p className="text-xl font-semibold text-cyan-300">
+                    {String(result.terrain_class)}
+                  </p>
+
+                  <div className="mt-4 border-t border-white/10 pt-3">
+                    <p className="mb-1 text-xs text-slate-500">
+                      Difficulty assessment
+                    </p>
+                    <p className="text-sm font-medium text-slate-200">
+                      {String(result.difficulty)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Terrain interpretation
+                  </p>
+
+                  <p className="text-sm leading-6 text-slate-300">
+                    {String(result.interpretation)}
+                  </p>
+                </div>
+              </div>
+
+              {result.model_note && (
+                <div className="flex items-start gap-3 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
+                  <Info
+                    size={18}
+                    className="mt-0.5 shrink-0 text-amber-300"
+                  />
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+                      Model note
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-300">
+                      {String(result.model_note)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-sm text-slate-400">
+              The selected location has not returned a terrain result yet.
+            </div>
+          )}
         </div>
-
-        <p className="mt-4 text-[10px] text-slate-500">
-          Regional measurements are calculated from valid raster pixels.
-        </p>
-
       </section>
 
-      {/* ELEVATION AND SLOPE STATISTICS */}
-      <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-
-        {/* ELEVATION */}
-        <div className="rounded-2xl border border-white/10 bg-[#0D1727] p-5">
-
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-500/10">
-              <Mountain size={17} className="text-orange-400" />
-            </div>
-
-            <div>
-              <h3 className="text-sm font-semibold text-white">
-                Elevation Statistics
-              </h3>
-
-              <p className="text-[10px] text-slate-500 mt-1">
-                Vertical surface measurements
-              </p>
-            </div>
+      {/* REGIONAL SUMMARY */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg border border-violet-400/20 bg-violet-400/10 p-2">
+            <Layers3 size={19} className="text-violet-300" />
           </div>
 
-          <div className="mt-5">
-            <StatisticRow
-              label="Minimum elevation"
-              value={`${formatNumber(elevation.min)} m`}
-            />
-
-            <StatisticRow
-              label="Maximum elevation"
-              value={`${formatNumber(elevation.max)} m`}
-            />
-
-            <StatisticRow
-              label="Mean elevation"
-              value={`${formatNumber(elevation.mean)} m`}
-            />
-
-            <StatisticRow
-              label="Standard deviation"
-              value={`${formatNumber(elevation.standardDeviation)} m`}
-            />
+          <div>
+            <h2 className="font-semibold text-white">Regional Summary</h2>
+            <p className="text-xs text-slate-500">
+              Statistics calculated across the study region
+            </p>
           </div>
-
         </div>
 
-        {/* SLOPE */}
-        <div className="rounded-2xl border border-white/10 bg-[#0D1727] p-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Mean Elevation"
+            value={elevation.mean.toFixed(2)}
+            unit="Metres"
+            icon={Mountain}
+          />
 
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10">
-              <Activity size={17} className="text-cyan-400" />
-            </div>
+          <StatCard
+            label="Mean Slope"
+            value={`${slope.mean.toFixed(2)}°`}
+            unit="Degrees"
+            icon={Activity}
+          />
 
-            <div>
-              <h3 className="text-sm font-semibold text-white">
-                Slope Statistics
-              </h3>
+          <StatCard
+            label="Elevation Range"
+            value={`${(elevation.max - elevation.min).toFixed(0)}`}
+            unit="Metres"
+            icon={TrendingUp}
+          />
 
-              <p className="text-[10px] text-slate-500 mt-1">
-                Surface inclination measurements
-              </p>
-            </div>
+          <StatCard
+            label="Mean Terrain Slope"
+            value={`${slope.mean.toFixed(2)}°`}
+            unit="Regional average"
+            icon={Gauge}
+          />
+        </div>
+      </section>
+
+      {/* ELEVATION STATISTICS */}
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <Mountain size={19} className="text-cyan-400" />
+          <div>
+            <h2 className="font-semibold">Elevation Statistics</h2>
+            <p className="text-xs text-slate-500">
+              Regional elevation distribution
+            </p>
           </div>
-
-          <div className="mt-5">
-            <StatisticRow
-              label="Minimum slope"
-              value={`${slope.min.toFixed(2)}°`}
-            />
-
-            <StatisticRow
-              label="Maximum slope"
-              value={`${slope.max.toFixed(2)}°`}
-            />
-
-            <StatisticRow
-              label="Mean slope"
-              value={`${slope.mean.toFixed(2)}°`}
-            />
-
-            <StatisticRow
-              label="Standard deviation"
-              value={`${slope.standardDeviation.toFixed(2)}°`}
-            />
-          </div>
-
         </div>
 
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <MetricRow
+            label="Minimum"
+            value={`${elevation.min.toFixed(2)} m`}
+          />
+          <MetricRow
+            label="Maximum"
+            value={`${elevation.max.toFixed(2)} m`}
+          />
+          <MetricRow
+            label="Mean"
+            value={`${elevation.mean.toFixed(2)} m`}
+          />
+          <MetricRow
+            label="Standard deviation"
+            value={`${elevation.standardDeviation.toFixed(2)} m`}
+          />
+        </div>
+      </section>
+
+      {/* SLOPE STATISTICS */}
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <Activity size={19} className="text-emerald-400" />
+          <div>
+            <h2 className="font-semibold">Slope Statistics</h2>
+            <p className="text-xs text-slate-500">
+              Regional surface inclination
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <MetricRow label="Minimum" value={`${slope.min.toFixed(2)}°`} />
+          <MetricRow label="Maximum" value={`${slope.max.toFixed(2)}°`} />
+          <MetricRow label="Mean" value={`${slope.mean.toFixed(2)}°`} />
+          <MetricRow
+            label="Standard deviation"
+            value={`${slope.standardDeviation.toFixed(2)}°`}
+          />
+        </div>
       </section>
 
       {/* TERRAIN DISTRIBUTION */}
-      <section className="rounded-2xl border border-white/10 bg-[#0D1727] p-5 md:p-6">
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-500/10">
-              <Layers3 size={17} className="text-orange-400" />
-            </div>
-
+            <Layers3 size={19} className="text-cyan-400" />
             <div>
-              <h3 className="text-sm font-semibold text-white">
-                Terrain Difficulty Distribution
-              </h3>
-
-              <p className="text-[10px] text-slate-500 mt-1">
-                Slope-based classification of the available region
+              <h2 className="font-semibold">Terrain Class Distribution</h2>
+              <p className="text-xs text-slate-500">
+                Regional area grouped by traversability class
               </p>
             </div>
-
           </div>
 
-          <span className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[9px] tracking-wider text-slate-400">
-            5 TERRAIN CLASSES
+          <span className="text-xs text-slate-500">
+            Total: 100% (approx.)
           </span>
-
         </div>
 
-        <p className="mt-5 text-xs text-slate-500">
-          Percentage of valid slope pixels belonging to each provisional terrain class.
-        </p>
-
-        <div className="mt-7 space-y-7">
-
-          {terrain.map((item) => (
-            <div key={item.name}>
-
-              {/* CLASS HEADER */}
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-
-                <div className="flex flex-wrap items-center gap-2">
-
-                  <span
-                    className="h-3 w-3 shrink-0 rounded-sm"
-                    style={{ backgroundColor: item.colour }}
-                  />
-
-                  <span className="text-sm font-medium text-slate-200">
-                    {item.name}
-                  </span>
-
-                  <span className="text-[10px] text-slate-500">
-                    {item.range}
-                  </span>
-
+        <div className="space-y-5">
+          {terrainClasses.map((terrain) => (
+            <div key={terrain.name}>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-slate-200">
+                    {terrain.name}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {terrain.description}
+                  </p>
                 </div>
 
-                <span className="font-mono text-sm font-semibold text-white">
-                  {item.percentage.toFixed(2)}%
-                </span>
-
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-white">
+                    {terrain.percentage.toFixed(2)}%
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {terrain.area.toFixed(2)} km²
+                  </p>
+                </div>
               </div>
 
-              {/* DISTRIBUTION BAR */}
-              <div className="h-3 w-full overflow-hidden rounded-full bg-white/[0.06]">
-
+              <div className="h-3 overflow-hidden rounded-full bg-white/10">
                 <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{
-                    width: `${item.percentage}%`,
-                    minWidth: '14px',
-                    backgroundColor: item.colour,
-                    boxShadow: `0 0 12px ${item.colour}55`,
-                  }}
+                  className={`h-full min-w-[14px] rounded-full ${terrain.color}`}
+                  style={{ width: `${terrain.percentage}%` }}
                 />
-
               </div>
-
-              {/* CLASS DETAILS */}
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-
-                  <span className="text-[10px] text-slate-400">
-                    {item.area.toLocaleString('en-US')} km²
-                  </span>
-
-                  <span className="text-[10px] text-slate-600">
-                    {item.description}
-                  </span>
-
-                </div>
-
-                <span className="text-[10px] text-slate-500">
-                  Traversal cost: {item.cost}
-                </span>
-
-              </div>
-
             </div>
           ))}
-
         </div>
-
-        {/* TERRAIN SUMMARY */}
-        <div className="mt-8 grid grid-cols-1 gap-3 border-t border-white/10 pt-6 sm:grid-cols-2">
-
-          <div className="rounded-xl border border-emerald-500/10 bg-emerald-500/[0.04] p-4">
-
-            <div className="flex items-center gap-2">
-              <TrendingUp size={15} className="text-emerald-400" />
-
-              <p className="text-[10px] tracking-widest text-slate-400">
-                GENTLE + MODERATE
-              </p>
-            </div>
-
-            <p className="mt-3 text-3xl font-semibold text-emerald-400">
-              91.83%
-            </p>
-
-            <p className="mt-2 text-[10px] text-slate-500">
-              Combined share of lower-slope terrain
-            </p>
-
-          </div>
-
-          <div className="rounded-xl border border-orange-500/10 bg-orange-500/[0.04] p-4">
-
-            <div className="flex items-center gap-2">
-              <Gauge size={15} className="text-orange-400" />
-
-              <p className="text-[10px] tracking-widest text-slate-400">
-                STEEPER CLASSES
-              </p>
-            </div>
-
-            <p className="mt-3 text-3xl font-semibold text-orange-400">
-              8.17%
-            </p>
-
-            <p className="mt-2 text-[10px] text-slate-500">
-              Combined share of slopes above 15°
-            </p>
-
-          </div>
-
-        </div>
-
       </section>
 
-      {/* DATASET AND METHODOLOGY */}
-      <section className="rounded-2xl border border-white/10 bg-[#0D1727] p-5 md:p-6">
-
-        <div className="flex items-center gap-3">
-
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10">
-            <Database size={17} className="text-cyan-400" />
+      {/* DATASET INFORMATION */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <Database size={19} className="text-cyan-400" />
+            <h2 className="font-semibold">Dataset Information</h2>
           </div>
 
-          <div>
-            <h3 className="text-sm font-semibold text-white">
-              Dataset & Methodology
-            </h3>
-
-            <p className="text-[10px] text-slate-500 mt-1">
-              Source data and processing information
-            </p>
-          </div>
-
+          <MetricRow label="Study region" value="Jezero Crater, Mars" />
+          <MetricRow
+            label="Elevation pixels"
+            value={totalPixels.toLocaleString()}
+          />
+          <MetricRow
+            label="Slope pixels"
+            value={slopePixels.toLocaleString()}
+          />
+          <MetricRow label="DEM resolution" value="20 metres" />
+          <MetricRow label="Elevation coverage" value="99.94%" />
+          <MetricRow label="Slope coverage" value="99.88%" />
         </div>
 
-        {/* DATASET DETAILS */}
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-
-          <div className="rounded-lg border border-white/5 bg-[#080D18] p-4">
-
-            <p className="text-[9px] tracking-widest text-slate-500">
-              ELEVATION SOURCE
-            </p>
-
-            <p className="mt-2 break-all text-xs text-slate-200">
-              M20_JezeroCrater_CTXDEM_20m.tif
-            </p>
-
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <Info size={19} className="text-amber-300" />
+            <h2 className="font-semibold">Methodology & Limitations</h2>
           </div>
 
-          <div className="rounded-lg border border-white/5 bg-[#080D18] p-4">
-
-            <p className="text-[9px] tracking-widest text-slate-500">
-              SLOPE SOURCE
-            </p>
-
-            <p className="mt-2 break-all text-xs text-slate-200">
-              jezero_slope.tif
-            </p>
-
-          </div>
-
-          <div className="rounded-lg border border-white/5 bg-[#080D18] p-4">
-
-            <p className="text-[9px] tracking-widest text-slate-500">
-              TRAVERSABILITY SOURCE
-            </p>
-
-            <p className="mt-2 break-all text-xs text-slate-200">
-              jezero_traversability.tif
-            </p>
-
-          </div>
-
-          <div className="rounded-lg border border-white/5 bg-[#080D18] p-4">
-
-            <p className="text-[9px] tracking-widest text-slate-500">
-              ORIGINAL PIXEL RESOLUTION
-            </p>
-
-            <p className="mt-2 text-xs text-slate-200">
-              20 m × 20 m
-            </p>
-
-          </div>
-
+          <ul className="space-y-3 text-sm leading-6 text-slate-400">
+            <li>
+              • Elevation and slope statistics describe the processed
+              regional raster datasets.
+            </li>
+            <li>
+              • Traversability classes are derived from terrain-related
+              cost values in the processed dataset.
+            </li>
+            <li>
+              • Selected-location readings are retrieved separately from
+              the terrain API.
+            </li>
+            <li>
+              • Terrain cost is a model-derived indicator, not a direct
+              measurement of rover mobility or safety.
+            </li>
+            <li>
+              • Actual rover navigation requires additional validation,
+              including vehicle constraints and environmental hazards.
+            </li>
+          </ul>
         </div>
-
-        {/* PIXEL COUNTS */}
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-
-          <div className="rounded-lg border border-white/5 bg-[#080D18] p-4">
-
-            <p className="text-[9px] tracking-widest text-slate-500">
-              VALID ELEVATION PIXELS
-            </p>
-
-            <p className="mt-2 text-xl font-semibold font-mono text-white">
-              {totalPixels.toLocaleString('en-US')}
-            </p>
-
-          </div>
-
-          <div className="rounded-lg border border-white/5 bg-[#080D18] p-4">
-
-            <p className="text-[9px] tracking-widest text-slate-500">
-              VALID SLOPE PIXELS
-            </p>
-
-            <p className="mt-2 text-xl font-semibold font-mono text-white">
-              {slopePixels.toLocaleString('en-US')}
-            </p>
-
-          </div>
-
-        </div>
-
-        {/* SCIENTIFIC LIMITATIONS */}
-        <div className="mt-5 rounded-xl border border-orange-500/20 bg-orange-500/[0.04] p-4">
-
-          <div className="flex items-center gap-2">
-
-            <AlertTriangle size={15} className="text-orange-400" />
-
-            <p className="text-[10px] tracking-widest text-orange-400">
-              SCIENTIFIC LIMITATIONS
-            </p>
-
-          </div>
-
-          <p className="mt-3 text-xs leading-6 text-slate-300">
-            Terrain classes and traversal costs are provisional research
-            parameters, not validated rover safety limits. Statistics
-            describe the available DEM coverage, not the entire Jezero
-            Crater. Slope is derived from the elevation model and depends
-            on its resolution and processing method.
-          </p>
-
-        </div>
-
-        {/* METHODOLOGY NOTE */}
-        <div className="mt-4 flex items-start gap-2">
-
-          <Info size={14} className="mt-0.5 shrink-0 text-cyan-500" />
-
-          <p className="text-[10px] leading-5 text-slate-500">
-            The minimum visible width of small distribution bars is a
-            display adjustment only. The percentage labels represent
-            the actual calculated values.
-          </p>
-
-        </div>
-
       </section>
 
+      {/* FOOTER */}
+      <div className="flex flex-col gap-2 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-slate-500">
+          ASTRAL · Mars Terrain Intelligence
+        </p>
+
+        <p className="text-xs text-slate-500">
+          Regional statistics remain fixed; selected-location readings update
+          when a new map coordinate is inspected.
+        </p>
+      </div>
     </div>
   )
 }

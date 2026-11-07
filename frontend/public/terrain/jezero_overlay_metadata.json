@@ -1,0 +1,46 @@
+{
+    "region": "Jezero Crater, Mars",
+    "coordinate_system": "Mars Equirectangular",
+    "overlays": {
+        "slope": {
+            "image": "jezero_slope_overlay.png",
+            "width": 1583,
+            "height": 1800,
+            "value_min": 0.0533,
+            "value_max": 84.956,
+            "display_min": 0.0,
+            "display_max": 60.0,
+            "valid_pixels": 2849400,
+            "bounds": [
+                [
+                    17.580519910544755,
+                    76.99743706146002
+                ],
+                [
+                    19.29018700686615,
+                    78.58256332408818
+                ]
+            ]
+        },
+        "traversability": {
+            "image": "jezero_traversability_overlay.png",
+            "width": 1583,
+            "height": 1800,
+            "value_min": 1.0,
+            "value_max": 100.0,
+            "display_min": 1.0,
+            "display_max": 17.091665267944336,
+            "valid_pixels": 2849400,
+            "bounds": [
+                [
+                    17.580519910544755,
+                    76.99743706146002
+                ],
+                [
+                    19.29018700686615,
+                    78.58256332408818
+                ]
+            ]
+        }
+    }
+}

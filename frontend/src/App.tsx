@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 
 import {
   Globe2,
@@ -33,7 +33,11 @@ import {
   useMapEvents,
 } from 'react-leaflet'
 
-import type { FeatureCollection, LineString } from 'geojson'
+import type {
+  FeatureCollection,
+  LineString,
+  Position,
+} from 'geojson'
 
 import {
   getTerrainAtLocation,
@@ -45,6 +49,10 @@ import MissionAssessment from './components/MissionAssessment'
 import RoutePlanner from './components/RoutePlanner'
 
 import 'leaflet/dist/leaflet.css'
+
+// --------------------------------------------------
+// TYPES
+// --------------------------------------------------
 
 type Section =
   | 'Mars Explorer'
@@ -73,6 +81,17 @@ type RouteProperties = {
 }
 
 type RouteGeoJSON = FeatureCollection<LineString, RouteProperties>
+
+type ScienceExplorerProps = {
+  onTerrainInspect: (coordinates: [number, number]) => void
+  terrainResult: TerrainResponse | null
+  terrainLoading: boolean
+  terrainError: string | null
+}
+
+// --------------------------------------------------
+// NAVIGATION
+// --------------------------------------------------
 
 const navigation = [
   { label: 'Mars Explorer', icon: Globe2 },
@@ -140,21 +159,43 @@ function CoordinateTracker({
 function RouteBoundsController({
   coordinates,
 }: {
-  coordinates: number[][]
+  coordinates: Position[]
 }) {
   const map = useMap()
 
   useEffect(() => {
     if (coordinates.length < 2) return
 
-    const bounds = coordinates.map(([longitude, latitude]) => [
-      latitude,
-      longitude,
+    const bounds = coordinates.map((position) => [
+      position[1],
+      position[0],
     ] as [number, number])
 
     map.fitBounds(bounds, {
       padding: [45, 45],
       maxZoom: 5,
+    })
+  }, [map, coordinates])
+
+  return null
+}
+
+// --------------------------------------------------
+// MAP NAVIGATION CONTROLLER
+// --------------------------------------------------
+
+function MapFlyTo({
+  coordinates,
+}: {
+  coordinates: [number, number] | null
+}) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!coordinates) return
+
+    map.flyTo(coordinates, 7, {
+      duration: 1.2,
     })
   }, [map, coordinates])
 
@@ -176,6 +217,18 @@ function MarsMap({
   const [coordinates, setCoordinates] =
     useState<[number, number]>(JEZERO)
 
+  const [latitudeInput, setLatitudeInput] = useState('')
+  const [longitudeInput, setLongitudeInput] = useState('')
+
+  const [selectedCoordinates, setSelectedCoordinates] =
+    useState<[number, number] | null>(null)
+
+  const [searchCoordinates, setSearchCoordinates] =
+    useState<[number, number] | null>(null)
+
+  const [coordinateError, setCoordinateError] =
+    useState<string | null>(null)
+
   const [slopeMetadata, setSlopeMetadata] =
     useState<SlopeMetadata | null>(null)
 
@@ -189,6 +242,7 @@ function MarsMap({
   const [routeError, setRouteError] = useState<string | null>(null)
 
   // LOAD SLOPE METADATA
+
   useEffect(() => {
     let cancelled = false
 
@@ -242,6 +296,7 @@ function MarsMap({
   }, [])
 
   // LOAD A* ROUTE GEOJSON
+
   useEffect(() => {
     let cancelled = false
 
@@ -296,8 +351,58 @@ function MarsMap({
     }
   }, [])
 
+  // COORDINATE SEARCH HANDLER
+
+  function handleCoordinateSearch(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault()
+
+    const latitude = Number(latitudeInput)
+    const longitude = Number(longitudeInput)
+
+    if (
+      latitudeInput.trim() === '' ||
+      longitudeInput.trim() === '' ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude)
+    ) {
+      setCoordinateError(
+        'Enter valid latitude and longitude values.'
+      )
+      return
+    }
+
+    if (
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      setCoordinateError(
+        'Latitude must be between -90 and 90, and longitude between -180 and 180.'
+      )
+      return
+    }
+
+    const target: [number, number] = [
+      latitude,
+      longitude,
+    ]
+
+    setCoordinateError(null)
+    setSelectedCoordinates(target)
+    setSearchCoordinates(target)
+    setCoordinates(target)
+
+    onTerrainInspect(target)
+  }
+
+  // ROUTE DATA
+
   const routeFeature = routeData?.features[0]
-  const routeCoordinates =
+
+  const routeCoordinates: Position[] =
     routeFeature?.geometry.coordinates ?? []
 
   const start = routeCoordinates.length > 0
@@ -307,6 +412,8 @@ function MarsMap({
   const destination = routeCoordinates.length > 0
     ? routeCoordinates[routeCoordinates.length - 1] as [number, number]
     : null
+
+  // MAP RENDER
 
   return (
     <div className="relative h-[520px] w-full bg-[#111B2B]">
@@ -319,6 +426,8 @@ function MarsMap({
         scrollWheelZoom={true}
         className="h-full w-full"
       >
+
+        <MapFlyTo coordinates={searchCoordinates} />
 
         <TileLayer
           attribution='Map tiles: <a href="https://openplanetarymap.org/">OpenPlanetaryMap</a>'
@@ -356,7 +465,6 @@ function MarsMap({
                 })}
               />
 
-              {/* START MARKER */}
               <CircleMarker
                 center={[start[1], start[0]]}
                 radius={8}
@@ -372,7 +480,6 @@ function MarsMap({
                 </Tooltip>
               </CircleMarker>
 
-              {/* DESTINATION MARKER */}
               <CircleMarker
                 center={[destination[1], destination[0]]}
                 radius={8}
@@ -408,14 +515,100 @@ function MarsMap({
           </Tooltip>
         </CircleMarker>
 
+        {/* SELECTED LOCATION */}
+        {selectedCoordinates && (
+          <CircleMarker
+            center={selectedCoordinates}
+            radius={10}
+            pathOptions={{
+              color: '#FFFFFF',
+              fillColor: '#06B6D4',
+              fillOpacity: 1,
+              weight: 3,
+            }}
+          >
+            <Tooltip permanent direction="top">
+              Selected Location
+            </Tooltip>
+          </CircleMarker>
+        )}
+
         <CoordinateTracker
           onCoordinatesChange={setCoordinates}
-          onMapClick={onTerrainInspect}
+          onMapClick={(target) => {
+            setSelectedCoordinates(target)
+            setCoordinateError(null)
+            onTerrainInspect(target)
+          }}
         />
 
       </MapContainer>
 
-      {/* SURFACE COORDINATE DISPLAY */}
+      {/* COORDINATE SEARCH */}
+      <form
+        onSubmit={handleCoordinateSearch}
+        className="absolute left-1/2 top-4 z-[1100] w-[min(440px,calc(100%-180px))] -translate-x-1/2 rounded-xl border border-cyan-500/20 bg-[#080D18]/95 p-3 shadow-xl backdrop-blur-md"
+      >
+
+        <div className="mb-2 flex items-center gap-2">
+
+          <Crosshair size={14} className="text-cyan-400" />
+
+          <p className="text-[9px] tracking-widest text-cyan-300">
+            COORDINATE NAVIGATION
+          </p>
+
+        </div>
+
+        <div className="flex gap-2">
+
+          <input
+            type="number"
+            step="any"
+            value={latitudeInput}
+            onChange={(event) =>
+              setLatitudeInput(event.target.value)
+            }
+            placeholder="Latitude"
+            aria-label="Latitude"
+            className="min-w-0 w-1/2 rounded-lg border border-white/10 bg-[#111B2B] px-3 py-2 text-xs text-white outline-none focus:border-cyan-500/50"
+          />
+
+          <input
+            type="number"
+            step="any"
+            value={longitudeInput}
+            onChange={(event) =>
+              setLongitudeInput(event.target.value)
+            }
+            placeholder="Longitude"
+            aria-label="Longitude"
+            className="min-w-0 w-1/2 rounded-lg border border-white/10 bg-[#111B2B] px-3 py-2 text-xs text-white outline-none focus:border-cyan-500/50"
+          />
+
+          <button
+            type="submit"
+            className="flex shrink-0 items-center gap-1 rounded-lg bg-cyan-500 px-3 py-2 text-xs font-semibold text-[#080D18] transition hover:bg-cyan-400"
+          >
+            <Navigation size={13} />
+            Locate
+          </button>
+
+        </div>
+
+        {coordinateError && (
+          <p className="mt-2 text-[10px] text-red-400">
+            {coordinateError}
+          </p>
+        )}
+
+        <p className="mt-2 text-[9px] text-slate-500">
+          Enter decimal-degree coordinates to locate a Martian surface point.
+        </p>
+
+      </form>
+
+      {/* SURFACE COORDINATES */}
       <div className="pointer-events-none absolute top-16 left-4 z-[1000] rounded-lg border border-cyan-500/20 bg-[#080D18]/95 px-4 py-3 shadow-lg backdrop-blur-md">
 
         <p className="text-[9px] tracking-widest text-slate-500">
@@ -431,6 +624,7 @@ function MarsMap({
         <p className="mt-1 text-[9px] text-slate-500">
           Move cursor over map
         </p>
+
       </div>
 
       {/* REGION LABEL */}
@@ -441,6 +635,7 @@ function MarsMap({
         <span className="text-[10px] tracking-wider text-slate-300">
           JEZERO REGION
         </span>
+
       </div>
 
       {/* LAYER CONTROLS */}
@@ -454,12 +649,7 @@ function MarsMap({
             : 'border-white/10 bg-[#080D18]/90 text-slate-300'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
-          {showSlope ? (
-            <Eye size={14} />
-          ) : (
-            <EyeOff size={14} />
-          )}
-
+          {showSlope ? <Eye size={14} /> : <EyeOff size={14} />}
           {showSlope ? 'Slope ON' : 'Slope OFF'}
         </button>
 
@@ -471,12 +661,7 @@ function MarsMap({
             : 'border-white/10 bg-[#080D18]/90 text-slate-300'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
-          {showRoute ? (
-            <Eye size={14} />
-          ) : (
-            <EyeOff size={14} />
-          )}
-
+          {showRoute ? <Eye size={14} /> : <EyeOff size={14} />}
           {showRoute ? 'A* Route ON' : 'A* Route OFF'}
         </button>
 
@@ -486,7 +671,7 @@ function MarsMap({
       {showSlope && slopeMetadata && (
         <div className="absolute bottom-4 left-4 z-[1000] w-48 rounded-lg border border-white/10 bg-[#080D18]/95 p-3 backdrop-blur-md">
 
-          <p className="text-[9px] tracking-widest text-slate-400 mb-3">
+          <p className="mb-3 text-[9px] tracking-widest text-slate-400">
             TERRAIN SLOPE
           </p>
 
@@ -497,6 +682,7 @@ function MarsMap({
                 key={item.label}
                 className="flex items-center justify-between gap-3"
               >
+
                 <div className="flex items-center gap-2">
 
                   <span
@@ -510,7 +696,7 @@ function MarsMap({
 
                 </div>
 
-                <span className="text-[10px] font-mono text-slate-500">
+                <span className="font-mono text-[10px] text-slate-500">
                   {item.range}
                 </span>
 
@@ -519,7 +705,7 @@ function MarsMap({
 
           </div>
 
-          <p className="text-[9px] text-slate-500 mt-3 pt-2 border-t border-white/10">
+          <p className="mt-3 border-t border-white/10 pt-2 text-[9px] text-slate-500">
             Slope angle · Degrees
           </p>
 
@@ -530,7 +716,7 @@ function MarsMap({
       {showRoute && routeData && routeFeature && (
         <div className="absolute bottom-4 right-4 z-[1000] w-52 rounded-lg border border-cyan-500/20 bg-[#080D18]/95 p-3 backdrop-blur-md">
 
-          <div className="flex items-center gap-2 mb-3">
+          <div className="mb-3 flex items-center gap-2">
 
             <Navigation size={14} className="text-cyan-400" />
 
@@ -547,7 +733,7 @@ function MarsMap({
                 DISTANCE
               </p>
 
-              <p className="text-lg font-semibold text-white mt-1">
+              <p className="mt-1 text-lg font-semibold text-white">
                 158.13 <span className="text-xs text-slate-400">km</span>
               </p>
             </div>
@@ -557,16 +743,16 @@ function MarsMap({
                 WAYPOINTS
               </p>
 
-              <p className="text-lg font-semibold text-white mt-1">
+              <p className="mt-1 text-lg font-semibold text-white">
                 {routeFeature.properties.point_count}
               </p>
             </div>
 
           </div>
 
-          <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-2 border-t border-white/10 pt-3">
 
-            <span className="w-5 h-[3px] rounded bg-cyan-400" />
+            <span className="h-[3px] w-5 rounded bg-cyan-400" />
 
             <span className="text-[9px] text-slate-400">
               Experimental slope-based route
@@ -579,7 +765,7 @@ function MarsMap({
 
       {/* SLOPE LOADING / ERROR */}
       {loading && (
-        <div className="absolute top-16 right-4 z-[1000] rounded-lg border border-white/10 bg-[#080D18]/95 px-3 py-2">
+        <div className="absolute right-4 top-16 z-[1000] rounded-lg border border-white/10 bg-[#080D18]/95 px-3 py-2">
 
           <p className="text-[10px] text-cyan-300">
             Loading terrain metadata...
@@ -589,13 +775,13 @@ function MarsMap({
       )}
 
       {loadError && (
-        <div className="absolute top-16 right-4 z-[1000] max-w-64 rounded-lg border border-red-500/30 bg-[#080D18]/95 px-3 py-2">
+        <div className="absolute right-4 top-16 z-[1000] max-w-64 rounded-lg border border-red-500/30 bg-[#080D18]/95 px-3 py-2">
 
           <p className="text-[10px] text-red-300">
             Terrain layer unavailable
           </p>
 
-          <p className="text-[9px] text-slate-400 mt-1">
+          <p className="mt-1 text-[9px] text-slate-400">
             {loadError}
           </p>
 
@@ -604,7 +790,7 @@ function MarsMap({
 
       {/* ROUTE LOADING / ERROR */}
       {routeLoading && (
-        <div className="absolute top-28 right-4 z-[1000] rounded-lg border border-white/10 bg-[#080D18]/95 px-3 py-2">
+        <div className="absolute right-4 top-28 z-[1000] rounded-lg border border-white/10 bg-[#080D18]/95 px-3 py-2">
 
           <p className="text-[10px] text-cyan-300">
             Loading A* route...
@@ -614,13 +800,13 @@ function MarsMap({
       )}
 
       {routeError && (
-        <div className="absolute top-28 right-4 z-[1000] max-w-64 rounded-lg border border-red-500/30 bg-[#080D18]/95 px-3 py-2">
+        <div className="absolute right-4 top-28 z-[1000] max-w-64 rounded-lg border border-red-500/30 bg-[#080D18]/95 px-3 py-2">
 
           <p className="text-[10px] text-red-300">
             A* route unavailable
           </p>
 
-          <p className="text-[9px] text-slate-400 mt-1">
+          <p className="mt-1 text-[9px] text-slate-400">
             {routeError}
           </p>
 
@@ -670,6 +856,9 @@ const scienceTargets = [
     objective: 'Sediment and depositional history',
     icon: Layers3,
     colour: 'cyan',
+    research:
+      'Investigate sedimentary structures, depositional environments and evidence of ancient fluvial activity.',
+    coordinates: [18.35, 77.55] as [number, number],
   },
   {
     number: '02',
@@ -682,6 +871,9 @@ const scienceTargets = [
     objective: 'Surface geology and crater history',
     icon: Mountain,
     colour: 'orange',
+    research:
+      'Examine surface morphology, elevation and slope to understand the geological context of the crater floor.',
+    coordinates: [18.4, 77.4] as [number, number],
   },
   {
     number: '03',
@@ -694,10 +886,49 @@ const scienceTargets = [
     objective: 'Mineralogy and water–rock interaction',
     icon: Activity,
     colour: 'emerald',
+    research:
+      'Investigate the geological significance of carbonate-bearing materials and their potential records of ancient aqueous environments.',
+    coordinates: [17.646990093685726, 78.50928325000798] as [number, number],
   },
 ]
 
-function ScienceExplorer() {
+const scienceColourClasses: Record<string, string> = {
+  cyan: 'text-cyan-400 border-cyan-500/30',
+  orange: 'text-orange-400 border-orange-500/30',
+  emerald: 'text-emerald-400 border-emerald-500/30',
+}
+
+function ScienceExplorer({
+  onTerrainInspect,
+  terrainResult,
+  terrainLoading,
+  terrainError,
+}: ScienceExplorerProps) {
+  const [selectedTarget, setSelectedTarget] = useState('01')
+
+  const [latitude, setLatitude] = useState(
+    scienceTargets[0].coordinates[0].toString()
+  )
+
+  const [longitude, setLongitude] = useState(
+    scienceTargets[0].coordinates[1].toString()
+  )
+
+  const [coordinateError, setCoordinateError] =
+    useState<string | null>(null)
+
+  const selectedResearchTarget = scienceTargets.find(
+    (target) => target.number === selectedTarget
+  )!
+  const resultMatchesCoordinates =
+    terrainResult !== null &&
+    Math.abs(
+      terrainResult.location.latitude - Number(latitude)
+    ) < 0.000001 &&
+    Math.abs(
+      terrainResult.location.longitude - Number(longitude)
+    ) < 0.000001
+
   const objectives = [
     {
       title: 'Identify sedimentary structures',
@@ -721,6 +952,42 @@ function ScienceExplorer() {
     },
   ]
 
+  function handleScienceInspection(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault()
+
+    const lat = Number(latitude)
+    const lon = Number(longitude)
+
+    if (
+      latitude.trim() === '' ||
+      longitude.trim() === '' ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon)
+    ) {
+      setCoordinateError(
+        'Enter valid latitude and longitude coordinates.'
+      )
+      return
+    }
+
+    if (
+      lat < -90 ||
+      lat > 90 ||
+      lon < -180 ||
+      lon > 180
+    ) {
+      setCoordinateError(
+        'Latitude must be between -90 and 90 and longitude between -180 and 180.'
+      )
+      return
+    }
+
+    setCoordinateError(null)
+    onTerrainInspect([lat, lon])
+  }
+
   return (
     <div className="space-y-6">
 
@@ -731,16 +998,16 @@ function ScienceExplorer() {
 
           <div className="max-w-2xl">
 
-            <div className="flex items-center gap-2 text-orange-400 text-xs tracking-[0.2em]">
+            <div className="flex items-center gap-2 text-xs tracking-[0.2em] text-orange-400">
               <FlaskConical size={15} />
               SCIENTIFIC TARGET CATALOGUE
             </div>
 
-            <h3 className="text-2xl md:text-3xl font-semibold mt-4">
+            <h3 className="mt-4 text-2xl font-semibold md:text-3xl">
               Explore Jezero Crater
             </h3>
 
-            <p className="text-sm text-slate-400 mt-3 leading-7">
+            <p className="mt-3 text-sm leading-7 text-slate-400">
               Investigate geological environments that can help
               scientists understand the history of water,
               sediment deposition and potential past habitability
@@ -755,11 +1022,11 @@ function ScienceExplorer() {
               STUDY REGION
             </p>
 
-            <p className="text-sm font-semibold text-orange-400 mt-1">
+            <p className="mt-1 text-sm font-semibold text-orange-400">
               Jezero Crater
             </p>
 
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="mt-1 text-xs text-slate-500">
               Mars · Planetary Science
             </p>
 
@@ -767,7 +1034,7 @@ function ScienceExplorer() {
 
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-7">
+        <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-3">
 
           {[
             {
@@ -794,16 +1061,19 @@ function ScienceExplorer() {
             return (
               <div
                 key={item.label}
-                className="rounded-xl bg-[#111E30] border border-white/5 p-4"
+                className="rounded-xl border border-white/5 bg-[#111E30] p-4"
               >
 
-                <Icon size={20} className={`${item.colour} mb-3`} />
+                <Icon
+                  size={20}
+                  className={`${item.colour} mb-3`}
+                />
 
                 <p className="text-xs text-slate-500">
                   {item.label}
                 </p>
 
-                <p className="text-sm font-medium mt-1">
+                <p className="mt-1 text-sm font-medium">
                   {item.value}
                 </p>
 
@@ -824,71 +1094,96 @@ function ScienceExplorer() {
             GEOLOGICAL INVESTIGATION
           </p>
 
-          <h3 className="text-xl font-semibold mt-2">
+          <h3 className="mt-2 text-xl font-semibold">
             Scientific Target Regions
           </h3>
 
-          <p className="text-xs text-slate-500 mt-1">
-            Three geological environments of scientific interest
+          <p className="mt-1 text-xs text-slate-500">
+            Select a geological environment to explore its research priorities.
           </p>
 
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
 
           {scienceTargets.map((target) => {
             const Icon = target.icon
+            const colourClass =
+              scienceColourClasses[target.colour]
 
-            const colourClasses: Record<string, string> = {
-              cyan: 'text-cyan-400 border-cyan-500/30',
-              orange: 'text-orange-400 border-orange-500/30',
-              emerald: 'text-emerald-400 border-emerald-500/30',
-            }
+            const isSelected = selectedTarget === target.number
 
             return (
-              <article
+              <button
                 key={target.number}
-                className="rounded-2xl border border-white/10 bg-[#0D1727] p-5 hover:border-white/20 transition-colors"
+                type="button"
+                onClick={() => {
+                  setSelectedTarget(target.number)
+
+                  setLatitude(target.coordinates[0].toString())
+                  setLongitude(target.coordinates[1].toString())
+
+                  setCoordinateError(null)
+                }}
+                aria-pressed={isSelected}
+                className={`rounded-2xl border p-5 text-left transition-all ${isSelected
+                  ? 'border-orange-500/50 bg-orange-500/[0.07] shadow-lg shadow-orange-950/10'
+                  : 'border-white/10 bg-[#0D1727] hover:border-white/25'
+                  }`}
               >
 
-                <div className="flex justify-between items-center">
+                <div className="flex items-center justify-between">
 
-                  <span className={`text-[10px] tracking-widest ${colourClasses[target.colour].split(' ')[0]}`}>
+                  <span
+                    className={`text-[10px] tracking-widest ${colourClass.split(' ')[0]}`}
+                  >
                     TARGET {target.number}
                   </span>
 
-                  <Icon
-                    size={20}
-                    className={colourClasses[target.colour].split(' ')[0]}
-                  />
+                  <div className="flex items-center gap-2">
+
+                    {isSelected && (
+                      <span className="text-[9px] text-orange-400">
+                        SELECTED
+                      </span>
+                    )}
+
+                    <Icon
+                      size={20}
+                      className={colourClass.split(' ')[0]}
+                    />
+
+                  </div>
 
                 </div>
 
-                <h4 className="text-lg font-semibold mt-5">
+                <h4 className="mt-5 text-lg font-semibold">
                   {target.title}
                 </h4>
 
-                <p className="text-[9px] tracking-widest text-slate-500 mt-2">
+                <p className="mt-2 text-[9px] tracking-widest text-slate-500">
                   {target.category}
                 </p>
 
-                <p className="text-sm text-slate-400 leading-6 mt-4">
+                <p className="mt-4 text-sm leading-6 text-slate-400">
                   {target.description}
                 </p>
 
-                <div className="border-t border-white/10 mt-5 pt-4">
+                <div className="mt-5 border-t border-white/10 pt-4">
 
                   <p className="text-[10px] tracking-widest text-orange-400">
                     SCIENTIFIC QUESTION
                   </p>
 
-                  <p className="text-sm text-slate-300 leading-6 mt-2">
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
                     {target.question}
                   </p>
 
                 </div>
 
-                <div className={`mt-5 pt-3 border-t border-white/5 flex items-center gap-2 text-xs ${colourClasses[target.colour].split(' ')[0]}`}>
+                <div
+                  className={`mt-5 flex items-center gap-2 border-t border-white/5 pt-3 text-xs ${colourClass.split(' ')[0]}`}
+                >
 
                   <Crosshair size={14} />
 
@@ -896,11 +1191,281 @@ function ScienceExplorer() {
 
                 </div>
 
-              </article>
+              </button>
             )
           })}
 
         </div>
+
+      </section>
+
+      {/* SELECTED RESEARCH TARGET */}
+      <section className="rounded-2xl border border-cyan-500/20 bg-[#0D1727] p-6">
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+
+          <div>
+
+            <p className="text-[10px] tracking-[0.2em] text-cyan-400">
+              ACTIVE RESEARCH AREA
+            </p>
+
+            <h3 className="mt-2 text-xl font-semibold">
+              {selectedResearchTarget.title}
+            </h3>
+
+          </div>
+
+          <span className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[10px] text-cyan-300">
+            TARGET {selectedResearchTarget.number}
+          </span>
+
+        </div>
+
+        <p className="mt-4 text-sm leading-6 text-slate-400">
+          {selectedResearchTarget.research}
+        </p>
+
+        <div className="mt-5 rounded-xl border border-white/5 bg-[#080D18] p-4">
+
+          <div className="flex items-center gap-2">
+
+            <Crosshair size={15} className="text-cyan-400" />
+
+            <p className="text-[10px] tracking-widest text-cyan-400">
+              INSPECT A LOCATION
+            </p>
+
+          </div>
+
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            Enter a location within the available Jezero DEM coverage
+            to retrieve its terrain measurements.
+          </p>
+
+          <form
+            onSubmit={handleScienceInspection}
+            className="mt-4 space-y-3"
+          >
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+              <div>
+
+                <label
+                  htmlFor="science-latitude"
+                  className="mb-2 block text-[10px] text-slate-400"
+                >
+                  LATITUDE
+                </label>
+
+                <input
+                  id="science-latitude"
+                  type="number"
+                  step="any"
+                  value={latitude}
+                  onChange={(event) => setLatitude(event.target.value)}
+                  placeholder="e.g. 18.4"
+                  className="w-full rounded-lg border border-white/10 bg-[#111B2B] px-3 py-3 text-sm text-white outline-none focus:border-cyan-500/50"
+                />
+
+              </div>
+
+              <div>
+
+                <label
+                  htmlFor="science-longitude"
+                  className="mb-2 block text-[10px] text-slate-400"
+                >
+                  LONGITUDE
+                </label>
+
+                <input
+                  id="science-longitude"
+                  type="number"
+                  step="any"
+                  value={longitude}
+                  onChange={(event) => setLongitude(event.target.value)}
+                  placeholder="e.g. 77.4"
+                  className="w-full rounded-lg border border-white/10 bg-[#111B2B] px-3 py-3 text-sm text-white outline-none focus:border-cyan-500/50"
+                />
+
+              </div>
+
+            </div>
+
+            {coordinateError && (
+              <p className="text-xs text-red-400">
+                {coordinateError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={terrainLoading}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-3 text-xs font-semibold text-[#080D18] transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+
+              {terrainLoading ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  ANALYSING LOCATION
+                </>
+              ) : (
+                <>
+                  <Activity size={15} />
+                  ANALYSE TERRAIN
+                </>
+              )}
+
+            </button>
+
+          </form>
+
+        </div>
+
+        {/* TERRAIN RESULTS */}
+        {terrainLoading && (
+          <div className="mt-5 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-5 text-center">
+
+            <Loader2
+              size={25}
+              className="mx-auto animate-spin text-cyan-400"
+            />
+
+            <p className="mt-3 text-xs text-cyan-300">
+              Retrieving terrain measurements...
+            </p>
+
+          </div>
+        )}
+
+        {terrainError && !terrainLoading && (
+          <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+
+            <div className="flex items-center gap-2">
+
+              <AlertCircle size={15} className="text-red-400" />
+
+              <p className="text-xs font-medium text-red-300">
+                Terrain inspection failed
+              </p>
+
+            </div>
+
+            <p className="mt-2 text-xs leading-5 text-slate-400">
+              {terrainError}
+            </p>
+
+            <p className="mt-2 text-[10px] text-slate-500">
+              Check that the coordinates fall within the available DEM coverage.
+            </p>
+
+          </div>
+        )}
+
+        {resultMatchesCoordinates && !terrainLoading && (
+          <div className="mt-5">
+
+            <div className="mb-4 flex items-center gap-2">
+
+              <Activity size={15} className="text-emerald-400" />
+
+              <p className="text-[10px] tracking-widest text-emerald-400">
+                TERRAIN INSPECTION RESULTS
+              </p>
+
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+
+              <div className="rounded-xl border border-white/5 bg-[#080D18] p-4">
+
+                <p className="text-[9px] tracking-widest text-slate-500">
+                  ELEVATION
+                </p>
+
+                <p className="mt-2 text-xl font-semibold">
+                  {terrainResult.elevation_m.toFixed(2)}
+                  <span className="ml-1 text-[10px] text-slate-500">
+                    m
+                  </span>
+                </p>
+
+              </div>
+
+              <div className="rounded-xl border border-white/5 bg-[#080D18] p-4">
+
+                <p className="text-[9px] tracking-widest text-slate-500">
+                  SLOPE
+                </p>
+
+                <p className="mt-2 text-xl font-semibold">
+                  {terrainResult.slope_degrees.toFixed(2)}
+                  <span className="ml-1 text-[10px] text-slate-500">
+                    °
+                  </span>
+                </p>
+
+              </div>
+
+              <div className="rounded-xl border border-white/5 bg-[#080D18] p-4">
+
+                <p className="text-[9px] tracking-widest text-slate-500">
+                  TERRAIN CLASS
+                </p>
+
+                <p className="mt-2 text-sm font-semibold">
+                  {terrainResult.terrain_class}
+                </p>
+
+              </div>
+
+              <div className="rounded-xl border border-white/5 bg-[#080D18] p-4">
+
+                <p className="text-[9px] tracking-widest text-slate-500">
+                  TRAVERSABILITY COST
+                </p>
+
+                <p className="mt-2 text-xl font-semibold">
+                  {terrainResult.traversability_cost.toFixed(2)}
+                </p>
+
+              </div>
+
+            </div>
+
+            <div className="mt-3 rounded-xl border border-white/5 bg-[#080D18] p-4">
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+
+                <p className="text-[10px] tracking-widest text-slate-500">
+                  TERRAIN DIFFICULTY
+                </p>
+
+                <span className="rounded-md border border-orange-500/20 bg-orange-500/10 px-3 py-1 text-[10px] text-orange-300">
+                  {terrainResult.difficulty}
+                </span>
+
+              </div>
+
+              <p className="mt-3 text-xs leading-5 text-slate-300">
+                {terrainResult.interpretation}
+              </p>
+
+              <p className="mt-3 border-t border-white/5 pt-3 text-[9px] leading-5 text-slate-500">
+                {terrainResult.model_note}
+              </p>
+
+            </div>
+
+            <p className="mt-3 text-[9px] text-slate-500">
+              Inspected coordinates: {terrainResult.location.latitude.toFixed(5)}°,
+              {' '}{terrainResult.location.longitude.toFixed(5)}°
+            </p>
+
+          </div>
+        )}
 
       </section>
 
@@ -917,12 +1482,12 @@ function ScienceExplorer() {
 
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+        <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
 
           {objectives.map((objective, index) => (
             <div key={objective.title} className="flex gap-3">
 
-              <div className="w-9 h-9 shrink-0 rounded-lg bg-orange-500/10 flex items-center justify-center">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-500/10">
 
                 <span className="text-xs text-orange-400">
                   0{index + 1}
@@ -936,7 +1501,7 @@ function ScienceExplorer() {
                   {objective.title}
                 </p>
 
-                <p className="text-xs text-slate-500 leading-5 mt-1">
+                <p className="mt-1 text-xs leading-5 text-slate-500">
                   {objective.description}
                 </p>
 
@@ -950,11 +1515,11 @@ function ScienceExplorer() {
       </section>
 
       {/* SCIENTIFIC CONTEXT */}
-      <section className="rounded-xl border border-orange-500/20 bg-orange-500/[0.04] p-4 flex gap-3">
+      <section className="flex gap-3 rounded-xl border border-orange-500/20 bg-orange-500/[0.04] p-4">
 
         <AlertCircle
           size={18}
-          className="text-orange-400 shrink-0 mt-0.5"
+          className="mt-0.5 shrink-0 text-orange-400"
         />
 
         <div>
@@ -963,12 +1528,14 @@ function ScienceExplorer() {
             SCIENTIFIC CONTEXT
           </p>
 
-          <p className="text-xs text-slate-400 leading-6 mt-2">
-            These are conceptual geological research areas based
-            on established scientific understanding of Jezero
-            Crater. They are not live target detections or rover
-            observations. Dedicated geological and mineralogical
-            dataset integration is a future enhancement.
+          <p className="mt-2 text-xs leading-6 text-slate-400">
+            The geological target descriptions represent conceptual
+            research environments informed by scientific understanding
+            of Jezero Crater. They are not live target detections or
+            rover observations. Terrain measurements are retrieved
+            from the available processed DEM at the coordinates
+            entered above. Terrain measurements do not independently
+            establish mineral composition or biosignature presence.
           </p>
 
         </div>
@@ -988,6 +1555,7 @@ function App() {
     useState<Section>('Mars Explorer')
 
   // TERRAIN INSPECTOR STATE
+
   const [terrainResult, setTerrainResult] =
     useState<TerrainResponse | null>(null)
 
@@ -1000,7 +1568,8 @@ function App() {
   const [terrainError, setTerrainError] =
     useState<string | null>(null)
 
-  // FETCH TERRAIN DATA WHEN MAP IS CLICKED
+  // FETCH TERRAIN DATA WHEN A LOCATION IS SELECTED
+
   async function handleTerrainInspect(
     coordinates: [number, number]
   ) {
@@ -1029,15 +1598,17 @@ function App() {
     }
   }
 
+  // MAIN RENDER
+
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#080D18] text-slate-100">
 
       {/* HEADER */}
-      <header className="h-16 border-b border-white/10 flex items-center justify-between px-6">
+      <header className="flex h-16 items-center justify-between border-b border-white/10 px-6">
 
         <div className="flex items-center gap-3">
 
-          <div className="w-9 h-9 rounded-lg bg-orange-600 flex items-center justify-center">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-600">
             <Satellite size={21} />
           </div>
 
@@ -1053,17 +1624,17 @@ function App() {
 
         </div>
 
-        <div className="hidden md:flex items-center gap-2 text-xs text-slate-400">
+        <div className="hidden items-center gap-2 text-xs text-slate-400 md:flex">
 
           <Activity size={15} className="text-emerald-400" />
 
-          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
 
           SYSTEM INITIALISED
 
         </div>
 
-        <div className="text-xs text-slate-400 tracking-wider">
+        <div className="text-xs tracking-wider text-slate-400">
           MISSION CONTROL
         </div>
 
@@ -1072,9 +1643,9 @@ function App() {
       <div className="flex min-h-[calc(100vh-64px)]">
 
         {/* SIDEBAR */}
-        <aside className="hidden md:flex w-60 shrink-0 border-r border-white/10 p-5 flex-col">
+        <aside className="hidden w-60 shrink-0 flex-col border-r border-white/10 p-5 md:flex">
 
-          <p className="text-[10px] tracking-[0.2em] text-slate-500 mb-5">
+          <p className="mb-5 text-[10px] tracking-[0.2em] text-slate-500">
             EXPLORATION
           </p>
 
@@ -1088,9 +1659,9 @@ function App() {
                 <button
                   key={item.label}
                   onClick={() => setActiveSection(item.label)}
-                  className={`w-full flex items-center gap-3 rounded-lg px-4 py-3 text-sm text-left transition-all ${isActive
-                    ? 'bg-orange-500/10 border border-orange-500/20 text-orange-400'
-                    : 'border border-transparent text-slate-400 hover:text-white hover:bg-white/5'
+                  className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all ${isActive
+                    ? 'border-orange-500/20 bg-orange-500/10 text-orange-400'
+                    : 'border-transparent text-slate-400 hover:bg-white/5 hover:text-white'
                     }`}
                 >
 
@@ -1110,11 +1681,11 @@ function App() {
               PROJECT
             </p>
 
-            <p className="text-sm text-slate-300 mt-2">
+            <p className="mt-2 text-sm text-slate-300">
               ASTRAL v0.3
             </p>
 
-            <p className="text-xs text-slate-600 mt-1">
+            <p className="mt-1 text-xs text-slate-600">
               Research prototype
             </p>
 
@@ -1123,33 +1694,34 @@ function App() {
         </aside>
 
         {/* MAIN WORKSPACE */}
-        <main className="relative flex-1 min-w-0 w-0 max-w-full overflow-x-clip p-4 sm:p-6 xl:p-8">
+        <main className="relative min-w-0 w-0 max-w-full flex-1 overflow-x-clip p-4 sm:p-6 xl:p-8">
 
-          <div className="flex flex-wrap justify-between items-end gap-4 mb-7">
+          {/* PAGE HEADER */}
+          <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
 
             <div>
 
-              <p className="text-orange-400 text-xs tracking-[0.2em] mb-2">
+              <p className="mb-2 text-xs tracking-[0.2em] text-orange-400">
                 PLANETARY SURFACE OPERATIONS
               </p>
 
-              <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">
+              <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
                 {activeSection}
               </h2>
 
-              <p className="text-sm text-slate-500 mt-2">
+              <p className="mt-2 text-sm text-slate-500">
                 {descriptions[activeSection]}
               </p>
 
             </div>
 
-            <div className="border border-white/10 bg-white/[0.03] rounded-lg px-4 py-3">
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
 
-              <p className="text-[10px] text-slate-500 tracking-widest">
+              <p className="text-[10px] tracking-widest text-slate-500">
                 TARGET REGION
               </p>
 
-              <p className="text-sm font-medium mt-1">
+              <p className="mt-1 text-sm font-medium">
                 Jezero Crater
               </p>
 
@@ -1160,12 +1732,12 @@ function App() {
           {/* MARS EXPLORER */}
           {activeSection === 'Mars Explorer' ? (
 
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_290px] gap-5">
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_290px]">
 
               {/* MAP */}
-              <section className="rounded-2xl border border-white/10 overflow-hidden bg-[#0D1727]">
+              <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#0D1727]">
 
-                <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+                <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
 
                   <div>
 
@@ -1173,13 +1745,13 @@ function App() {
                       Surface Intelligence
                     </h3>
 
-                    <p className="text-xs text-slate-500 mt-1">
+                    <p className="mt-1 text-xs text-slate-500">
                       Interactive Martian surface map
                     </p>
 
                   </div>
 
-                  <span className="text-[10px] text-emerald-400 border border-emerald-500/20 bg-emerald-500/10 rounded-full px-3 py-1">
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] text-emerald-400">
                     MAP CONNECTED
                   </span>
 
@@ -1189,7 +1761,7 @@ function App() {
                   onTerrainInspect={handleTerrainInspect}
                 />
 
-                <div className="px-5 py-3 border-t border-white/10 flex flex-wrap justify-between gap-2">
+                <div className="flex flex-wrap justify-between gap-2 border-t border-white/10 px-5 py-3">
 
                   <span className="text-[10px] text-slate-500">
                     BASEMAP · OPENPLANETARYMAP
@@ -1209,7 +1781,7 @@ function App() {
                 {/* TERRAIN INSPECTOR */}
                 <section className="rounded-2xl border border-cyan-500/20 bg-[#0D1727] p-5">
 
-                  <div className="flex items-center gap-2 mb-4">
+                  <div className="mb-4 flex items-center gap-2">
 
                     <Crosshair
                       size={16}
@@ -1222,16 +1794,16 @@ function App() {
 
                   </div>
 
-                  <p className="text-sm text-slate-300 leading-6">
-                    Click any location on the Mars map to inspect its
-                    elevation, slope and terrain difficulty.
+                  <p className="text-sm leading-6 text-slate-300">
+                    Enter coordinates in the map search or click any
+                    location on the Mars map to inspect its elevation,
+                    slope and terrain difficulty.
                   </p>
 
-                  {/* SELECTED COORDINATES */}
                   {terrainCoordinates && (
-                    <div className="mt-4 rounded-lg bg-[#080D18] border border-white/5 p-3">
+                    <div className="mt-4 rounded-lg border border-white/5 bg-[#080D18] p-3">
 
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="mb-2 flex items-center gap-2">
 
                         <MapPin
                           size={13}
@@ -1244,18 +1816,17 @@ function App() {
 
                       </div>
 
-                      <p className="text-xs font-mono text-cyan-300">
+                      <p className="font-mono text-xs text-cyan-300">
                         {Math.abs(terrainCoordinates[0]).toFixed(5)}° {terrainCoordinates[0] >= 0 ? 'N' : 'S'}
                       </p>
 
-                      <p className="text-xs font-mono text-cyan-300 mt-1">
+                      <p className="mt-1 font-mono text-xs text-cyan-300">
                         {Math.abs(terrainCoordinates[1]).toFixed(5)}° {terrainCoordinates[1] >= 0 ? 'E' : 'W'}
                       </p>
 
                     </div>
                   )}
 
-                  {/* INITIAL STATE */}
                   {!terrainCoordinates && !terrainLoading && (
                     <div className="mt-4 rounded-lg border border-dashed border-white/10 p-5 text-center">
 
@@ -1264,36 +1835,34 @@ function App() {
                         className="mx-auto text-slate-600"
                       />
 
-                      <p className="text-xs text-slate-500 mt-3">
+                      <p className="mt-3 text-xs text-slate-500">
                         Awaiting map selection
                       </p>
 
                     </div>
                   )}
 
-                  {/* LOADING STATE */}
                   {terrainLoading && (
-                    <div className="mt-4 rounded-lg bg-cyan-500/5 border border-cyan-500/10 p-5 text-center">
+                    <div className="mt-4 rounded-lg border border-cyan-500/10 bg-cyan-500/5 p-5 text-center">
 
                       <Loader2
                         size={24}
-                        className="mx-auto text-cyan-400 animate-spin"
+                        className="mx-auto animate-spin text-cyan-400"
                       />
 
-                      <p className="text-xs text-cyan-300 mt-3">
+                      <p className="mt-3 text-xs text-cyan-300">
                         Analysing terrain...
                       </p>
 
-                      <p className="text-[10px] text-slate-500 mt-1">
+                      <p className="mt-1 text-[10px] text-slate-500">
                         Retrieving scientific raster data
                       </p>
 
                     </div>
                   )}
 
-                  {/* ERROR STATE */}
                   {terrainError && (
-                    <div className="mt-4 rounded-lg bg-red-500/5 border border-red-500/20 p-3">
+                    <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
 
                       <div className="flex items-center gap-2">
 
@@ -1308,24 +1877,22 @@ function App() {
 
                       </div>
 
-                      <p className="text-[11px] text-slate-400 mt-2 leading-5">
+                      <p className="mt-2 text-[11px] leading-5 text-slate-400">
                         {terrainError}
                       </p>
 
-                      <p className="text-[10px] text-slate-500 mt-2">
-                        Try selecting a location within the Jezero
-                        DEM coverage area.
+                      <p className="mt-2 text-[10px] text-slate-500">
+                        Try selecting a location within the Jezero DEM coverage area.
                       </p>
 
                     </div>
                   )}
 
-                  {/* TERRAIN RESULTS */}
                   {terrainResult && !terrainLoading && (
                     <div className="mt-4 space-y-3">
 
                       {/* ELEVATION */}
-                      <div className="rounded-lg bg-[#080D18] border border-white/5 p-3">
+                      <div className="rounded-lg border border-white/5 bg-[#080D18] p-3">
 
                         <div className="flex items-center gap-2">
 
@@ -1340,13 +1907,13 @@ function App() {
 
                         </div>
 
-                        <p className="text-xl font-semibold text-white mt-2">
+                        <p className="mt-2 text-xl font-semibold text-white">
                           {terrainResult.elevation_m.toLocaleString(
                             'en-US',
                             { maximumFractionDigits: 2 }
                           )}
 
-                          <span className="text-xs text-slate-400 ml-2">
+                          <span className="ml-2 text-xs text-slate-400">
                             metres
                           </span>
                         </p>
@@ -1354,7 +1921,7 @@ function App() {
                       </div>
 
                       {/* SLOPE */}
-                      <div className="rounded-lg bg-[#080D18] border border-white/5 p-3">
+                      <div className="rounded-lg border border-white/5 bg-[#080D18] p-3">
 
                         <div className="flex items-center gap-2">
 
@@ -1369,10 +1936,10 @@ function App() {
 
                         </div>
 
-                        <p className="text-xl font-semibold text-white mt-2">
+                        <p className="mt-2 text-xl font-semibold text-white">
                           {terrainResult.slope_degrees.toFixed(2)}
 
-                          <span className="text-xs text-slate-400 ml-2">
+                          <span className="ml-2 text-xs text-slate-400">
                             degrees
                           </span>
 
@@ -1381,7 +1948,7 @@ function App() {
                       </div>
 
                       {/* TERRAIN CLASS */}
-                      <div className="rounded-lg bg-[#080D18] border border-white/5 p-3">
+                      <div className="rounded-lg border border-white/5 bg-[#080D18] p-3">
 
                         <div className="flex items-center gap-2">
 
@@ -1396,7 +1963,7 @@ function App() {
 
                         </div>
 
-                        <p className="text-base font-semibold text-white mt-2">
+                        <p className="mt-2 text-base font-semibold text-white">
                           {terrainResult.terrain_class}
                         </p>
 
@@ -1405,14 +1972,14 @@ function App() {
                       {/* DIFFICULTY AND COST */}
                       <div className="grid grid-cols-2 gap-2">
 
-                        <div className="rounded-lg bg-[#080D18] border border-white/5 p-3">
+                        <div className="rounded-lg border border-white/5 bg-[#080D18] p-3">
 
                           <p className="text-[9px] tracking-widest text-slate-500">
                             DIFFICULTY
                           </p>
 
                           <span
-                            className={`inline-block mt-2 rounded-md border px-2 py-1 text-[10px] font-medium ${getDifficultyColour(
+                            className={`mt-2 inline-block rounded-md border px-2 py-1 text-[10px] font-medium ${getDifficultyColour(
                               terrainResult.difficulty
                             )}`}
                           >
@@ -1421,13 +1988,13 @@ function App() {
 
                         </div>
 
-                        <div className="rounded-lg bg-[#080D18] border border-white/5 p-3">
+                        <div className="rounded-lg border border-white/5 bg-[#080D18] p-3">
 
                           <p className="text-[9px] tracking-widest text-slate-500">
                             TRAVERSABILITY
                           </p>
 
-                          <p className="text-lg font-semibold text-white mt-2">
+                          <p className="mt-2 text-lg font-semibold text-white">
                             {terrainResult.traversability_cost}
                           </p>
 
@@ -1442,14 +2009,13 @@ function App() {
                           TERRAIN INTERPRETATION
                         </p>
 
-                        <p className="text-xs text-slate-300 leading-5 mt-2">
+                        <p className="mt-2 text-xs leading-5 text-slate-300">
                           {terrainResult.interpretation}
                         </p>
 
                       </div>
 
-                      {/* SCIENTIFIC NOTE */}
-                      <p className="text-[9px] text-slate-500 leading-4">
+                      <p className="text-[9px] leading-4 text-slate-500">
                         {terrainResult.model_note}
                       </p>
 
@@ -1465,23 +2031,23 @@ function App() {
                     MISSION OVERVIEW
                   </p>
 
-                  <h3 className="text-lg font-semibold mt-3">
+                  <h3 className="mt-3 text-lg font-semibold">
                     Jezero Crater
                   </h3>
 
-                  <p className="text-sm text-slate-400 leading-6 mt-2">
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
                     A scientifically significant impact crater on Mars
                     and the landing region explored by NASA's
                     Perseverance rover.
                   </p>
 
-                  <div className="mt-4 pt-4 border-t border-white/5">
+                  <div className="mt-4 border-t border-white/5 pt-4">
 
                     <p className="text-[10px] text-slate-500">
                       APPROXIMATE CENTRE
                     </p>
 
-                    <p className="text-xs font-mono text-cyan-300 mt-2">
+                    <p className="mt-2 font-mono text-xs text-cyan-300">
                       18.4° N · 77.4° E
                     </p>
 
@@ -1492,7 +2058,7 @@ function App() {
                 {/* DATA LAYERS */}
                 <section className="rounded-2xl border border-white/10 bg-[#0D1727] p-5">
 
-                  <div className="flex items-center gap-2 mb-4">
+                  <div className="mb-4 flex items-center gap-2">
 
                     <Layers3
                       size={15}
@@ -1514,7 +2080,7 @@ function App() {
                   ].map((layer) => (
                     <div
                       key={layer.name}
-                      className="flex items-center justify-between gap-2 py-3 border-b border-white/5 last:border-0"
+                      className="flex items-center justify-between gap-2 border-b border-white/5 py-3 last:border-0"
                     >
 
                       <span className="text-sm text-slate-300">
@@ -1544,13 +2110,13 @@ function App() {
                     ROUTE PLANNING
                   </p>
 
-                  <p className="text-sm text-slate-300 mt-3 leading-6">
+                  <p className="mt-3 text-sm leading-6 text-slate-300">
                     An experimental A* route has been generated
                     using slope-derived terrain costs from the
                     Jezero CTX DEM.
                   </p>
 
-                  <p className="text-xs text-slate-500 mt-3 leading-5">
+                  <p className="mt-3 text-xs leading-5 text-slate-500">
                     This route is a research demonstration.
                     It has not been validated for rover safety
                     or operational navigation.
@@ -1565,7 +2131,7 @@ function App() {
                     DEVELOPMENT STATUS
                   </p>
 
-                  <p className="text-sm text-slate-300 mt-3 leading-6">
+                  <p className="mt-3 text-sm leading-6 text-slate-300">
                     USGS terrain data has been processed into
                     a slope raster, geographic overlay and
                     experimental A* route.
@@ -1579,72 +2145,36 @@ function App() {
 
           ) : activeSection === 'Terrain Analysis' ? (
 
-            /* REGIONAL TERRAIN ANALYSIS */
-            <RegionalTerrainAnalysis />
+            <RegionalTerrainAnalysis
+              coordinates={terrainCoordinates}
+              result={terrainResult}
+              loading={terrainLoading}
+              error={terrainError}
+            />
 
           ) : activeSection === 'Science Explorer' ? (
 
-            /* SCIENCE EXPLORER */
-            <ScienceExplorer />
+            <ScienceExplorer
+              onTerrainInspect={handleTerrainInspect}
+              terrainResult={terrainResult}
+              terrainLoading={terrainLoading}
+              terrainError={terrainError}
+            />
 
           ) : activeSection === 'Route Planner' ? (
 
-            /* A* ROUTE PLANNER */
             <RoutePlanner />
 
-          ) : activeSection === 'Mission Assessment' ? (
-
-            /* MISSION ASSESSMENT */
-            <MissionAssessment />
-
           ) : (
-
-            /* OTHER MODULE PLACEHOLDERS */
-            <section className="rounded-2xl border border-white/10 bg-[#0D1727] p-8 min-h-[420px] flex flex-col justify-center">
-
-              <div className="w-14 h-14 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mb-6">
-
-                {activeSection === 'Science Explorer' && (
-                  <FlaskConical size={26} className="text-orange-400" />
-                )}
-
-                {activeSection === 'Route Planner' && (
-                  <Route size={26} className="text-orange-400" />
-                )}
-
-                {activeSection === 'Mission Assessment' && (
-                  <ClipboardList size={26} className="text-orange-400" />
-                )}
-
-              </div>
-
-              <p className="text-xs tracking-[0.2em] text-orange-400 mb-3">
-                ASTRAL MODULE
-              </p>
-
-              <h3 className="text-2xl font-semibold">
-                {activeSection}
-              </h3>
-
-              <p className="text-sm text-slate-400 max-w-lg leading-7 mt-3">
-                {descriptions[activeSection]}
-                {' '}This workspace will be connected to scientific
-                datasets and processing capabilities as development progresses.
-              </p>
-
-              <div className="mt-7 inline-flex items-center gap-2 text-xs text-slate-500">
-
-                <span className="w-2 h-2 rounded-full bg-orange-400" />
-
-                MODULE UNDER DEVELOPMENT
-
-              </div>
-
-            </section>
-
+            <MissionAssessment
+              result={terrainResult}
+              loading={terrainLoading}
+              error={terrainError}
+            />
           )}
 
-          <footer className="mt-8 border-t border-white/10 pt-5 flex flex-wrap justify-between gap-3 text-[10px] text-slate-600 tracking-wider">
+          {/* FOOTER */}
+          <footer className="mt-8 flex flex-wrap justify-between gap-3 border-t border-white/10 pt-5 text-[10px] tracking-wider text-slate-600">
 
             <span>ASTRAL · MARS MISSION PLANNING</span>
 
