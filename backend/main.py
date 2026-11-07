@@ -222,8 +222,8 @@ def classify_terrain(slope: float):
 
 def calculate_terrain_analysis():
     """
-    Calculate full-DEM elevation, slope and traversability statistics.
-    The result is cached after the first successful calculation.
+    Calculate full-DEM statistics using memory-efficient raster windows.
+    Results are cached after the first successful calculation.
     """
 
     global analysis_cache
@@ -241,124 +241,211 @@ def calculate_terrain_analysis():
         if not path.exists():
             raise FileNotFoundError(f"Dataset not found: {path.name}")
 
-    # Read elevation data and obtain its pixel resolution.
-    with rasterio.open(ELEVATION_PATH) as dataset:
-        elevation_data = dataset.read(1, masked=True)
-        pixel_width, pixel_height = dataset.res
+    def update_statistics(values, state):
+        """Merge a batch of values into running population statistics."""
+
+        if values.size == 0:
+            return
+
+        batch_count = int(values.size)
+        batch_mean = float(np.mean(values))
+        batch_m2 = float(np.sum((values - batch_mean) ** 2))
+
+        if state["count"] == 0:
+            state["count"] = batch_count
+            state["mean"] = batch_mean
+            state["m2"] = batch_m2
+            state["minimum"] = float(np.min(values))
+            state["maximum"] = float(np.max(values))
+            return
+
+        old_count = state["count"]
+        new_count = old_count + batch_count
+        delta = batch_mean - state["mean"]
+
+        state["mean"] += delta * batch_count / new_count
+        state["m2"] += (
+            batch_m2
+            + delta ** 2 * old_count * batch_count / new_count
+        )
+        state["count"] = new_count
+        state["minimum"] = min(
+            state["minimum"], float(np.min(values))
+        )
+        state["maximum"] = max(
+            state["maximum"], float(np.max(values))
+        )
+
+    def empty_statistics():
+        return {
+            "count": 0,
+            "mean": 0.0,
+            "m2": 0.0,
+            "minimum": float("inf"),
+            "maximum": float("-inf"),
+        }
+
+    elevation_stats = empty_statistics()
+    slope_stats = empty_statistics()
+
+    terrain_counts = [0] * len(TERRAIN_CLASSES)
+    cost_counts = {}
+
+    # Process 256 rows at a time instead of loading entire rasters.
+    window_rows = 256
+
+    with (
+        rasterio.open(ELEVATION_PATH) as elevation_ds,
+        rasterio.open(SLOPE_PATH) as slope_ds,
+        rasterio.open(TRAVERSABILITY_PATH) as cost_ds,
+    ):
+        width = elevation_ds.width
+        height = elevation_ds.height
+
+        if any(
+            ds.width != width or ds.height != height
+            for ds in (slope_ds, cost_ds)
+        ):
+            raise ValueError("Terrain rasters have mismatched dimensions.")
+
+        pixel_width, pixel_height = elevation_ds.res
+
         pixel_area_km2 = (
             abs(pixel_width * pixel_height) / 1_000_000
         )
 
-    # Read slope data.
-    with rasterio.open(SLOPE_PATH) as dataset:
-        slope_data = dataset.read(1, masked=True)
+        for row_start in range(0, height, window_rows):
+            row_count = min(window_rows, height - row_start)
 
-    # Read actual traversability-cost data.
-    with rasterio.open(TRAVERSABILITY_PATH) as dataset:
-        traversability_data = dataset.read(1, masked=True)
+            window = rasterio.windows.Window(
+                0, row_start, width, row_count
+            )
 
-    elevation_values = np.ma.compressed(elevation_data).astype(
-        np.float64
-    )
-    slope_values = np.ma.compressed(slope_data).astype(
-        np.float64
-    )
-    cost_values = np.ma.compressed(traversability_data).astype(
-        np.float64
-    )
+            elevation_data = elevation_ds.read(
+                1, window=window, masked=True
+            )
+            slope_data = slope_ds.read(
+                1, window=window, masked=True
+            )
+            cost_data = cost_ds.read(
+                1, window=window, masked=True
+            )
 
-    if elevation_values.size == 0 or slope_values.size == 0:
+            elevation_values = np.ma.compressed(
+                elevation_data
+            ).astype(np.float64)
+
+            slope_values = np.ma.compressed(
+                slope_data
+            ).astype(np.float64)
+
+            cost_values = np.ma.compressed(
+                cost_data
+            ).astype(np.float64)
+
+            update_statistics(elevation_values, elevation_stats)
+            update_statistics(slope_values, slope_stats)
+
+            # Count terrain classes for this window.
+            for index, terrain_class in enumerate(TERRAIN_CLASSES):
+                lower = terrain_class["minimum"]
+                upper = terrain_class["maximum"]
+
+                if upper is None:
+                    count = np.count_nonzero(slope_values >= lower)
+                else:
+                    count = np.count_nonzero(
+                        (slope_values >= lower)
+                        & (slope_values < upper)
+                    )
+
+                terrain_counts[index] += int(count)
+
+            # Aggregate actual traversability costs.
+            if cost_values.size > 0:
+                unique_costs, counts = np.unique(
+                    cost_values, return_counts=True
+                )
+
+                for cost, count in zip(unique_costs, counts):
+                    key = float(cost)
+                    cost_counts[key] = (
+                        cost_counts.get(key, 0) + int(count)
+                    )
+
+    if elevation_stats["count"] == 0 or slope_stats["count"] == 0:
         raise ValueError("No valid elevation or slope data found.")
 
-    # --------------------------------------------------
-    # ELEVATION STATISTICS
-    # --------------------------------------------------
-
+    # Elevation statistics.
     elevation_statistics = {
-        "minimum_m": round(float(np.min(elevation_values)), 2),
-        "maximum_m": round(float(np.max(elevation_values)), 2),
-        "mean_m": round(float(np.mean(elevation_values)), 2),
+        "minimum_m": round(elevation_stats["minimum"], 2),
+        "maximum_m": round(elevation_stats["maximum"], 2),
+        "mean_m": round(elevation_stats["mean"], 2),
         "standard_deviation_m": round(
-            float(np.std(elevation_values)), 2
+            float(np.sqrt(
+                elevation_stats["m2"] / elevation_stats["count"]
+            )), 2
         ),
-        "valid_pixels": int(elevation_values.size),
+        "valid_pixels": elevation_stats["count"],
     }
 
-    # --------------------------------------------------
-    # SLOPE STATISTICS
-    # --------------------------------------------------
-
+    # Slope statistics.
     slope_statistics = {
-        "minimum_degrees": round(float(np.min(slope_values)), 2),
-        "maximum_degrees": round(float(np.max(slope_values)), 2),
-        "mean_degrees": round(float(np.mean(slope_values)), 2),
+        "minimum_degrees": round(slope_stats["minimum"], 2),
+        "maximum_degrees": round(slope_stats["maximum"], 2),
+        "mean_degrees": round(slope_stats["mean"], 2),
         "standard_deviation_degrees": round(
-            float(np.std(slope_values)), 2
+            float(np.sqrt(
+                slope_stats["m2"] / slope_stats["count"]
+            )), 2
         ),
-        "valid_pixels": int(slope_values.size),
+        "valid_pixels": slope_stats["count"],
     }
 
-    # --------------------------------------------------
-    # TERRAIN CLASS DISTRIBUTION
-    # --------------------------------------------------
-
+    # Terrain class distribution.
     terrain_distribution = []
 
-    for terrain_class in TERRAIN_CLASSES:
+    for index, terrain_class in enumerate(TERRAIN_CLASSES):
         lower = terrain_class["minimum"]
         upper = terrain_class["maximum"]
 
         if upper is None:
-            class_mask = slope_values >= lower
             slope_range = f"{lower}°+"
         else:
-            class_mask = (
-                (slope_values >= lower)
-                & (slope_values < upper)
-            )
             slope_range = f"{lower}°–{upper}°"
 
-        pixel_count = int(np.count_nonzero(class_mask))
-        percentage = (
-            pixel_count / slope_values.size * 100
-        )
-        area_km2 = pixel_count * pixel_area_km2
+        pixel_count = terrain_counts[index]
 
         terrain_distribution.append({
             "terrain_class": terrain_class["name"],
             "slope_range": slope_range,
             "traversability_cost": terrain_class["cost"],
             "pixel_count": pixel_count,
-            "percentage": round(percentage, 2),
-            "area_km2": round(area_km2, 2),
+            "percentage": round(
+                pixel_count / slope_stats["count"] * 100, 2
+            ),
+            "area_km2": round(
+                pixel_count * pixel_area_km2, 2
+            ),
         })
 
-    # --------------------------------------------------
-    # TRAVERSABILITY COST DISTRIBUTION
-    # --------------------------------------------------
-
+    # Traversability cost distribution.
     cost_distribution = []
 
-    if cost_values.size > 0:
-        unique_costs, cost_counts = np.unique(
-            cost_values,
-            return_counts=True,
-        )
+    total_cost_pixels = sum(cost_counts.values())
 
-        for cost, count in zip(unique_costs, cost_counts):
-            cost_distribution.append({
-                "cost": round(float(cost), 2),
-                "pixel_count": int(count),
-                "percentage": round(
-                    float(count) / cost_values.size * 100,
-                    2,
-                ),
-            })
+    for cost in sorted(cost_counts):
+        count = cost_counts[cost]
 
-    # --------------------------------------------------
-    # FINAL ANALYSIS RESPONSE
-    # --------------------------------------------------
+        cost_distribution.append({
+            "cost": round(cost, 2),
+            "pixel_count": count,
+            "percentage": round(
+                count / total_cost_pixels * 100, 2
+            ),
+        })
 
+    # Preserve the existing API response structure.
     analysis_cache = {
         "region": "Jezero Crater, Mars",
         "analysis_scope": "Entire available DEM coverage",
@@ -375,14 +462,15 @@ def calculate_terrain_analysis():
         "terrain_distribution": terrain_distribution,
         "traversability_distribution": cost_distribution,
         "model_note": (
-            "Terrain classes and traversability costs are provisional "
-            "research parameters, not validated rover safety limits. "
+            "Terrain classes and traversability costs are provisional"
+            " research parameters, not validated rover safety limits. "
             "Statistics describe the available DEM coverage, not the "
             "entire Jezero Crater."
         ),
     }
 
     return analysis_cache
+
 
 
 @app.get("/")
