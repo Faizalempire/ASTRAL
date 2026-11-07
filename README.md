@@ -160,25 +160,28 @@ ASTRAL
 
 ## Terrain Data
 
+The project uses the USGS Mars 2020 Science Investigation CTX DEM Mosaic covering Jezero Crater.
 
-
-The project currently uses terrain data covering the available Jezero Crater DEM region.
-
-
-
-- DEM resolution: 20 metres
-
+- Original dataset: `M20_JezeroCrater_CTXDEM_20m.tif`
+- Dataset author: Fred Calef
+- Publisher: USGS Astrogeology Science Center
+- Publication date: 14 October 2021
+- Instrument: Mars Reconnaissance Orbiter Context Camera (CTX)
+- Spatial resolution: 20 metres per pixel
 - Derived products: slope and traversability rasters
-
 - Terrain analysis: elevation statistics, slope statistics and terrain classification
-
 - Visualisation: geospatial terrain overlays
 
+The source mosaic combines the original Mars 2020 Jezero CTX Terrain Relative Navigation DEM with additional crater-wide DEMs produced using the Ames Stereo Pipeline. The dataset is identified as public domain by USGS. Attribution is retained here in accordance with the source record.
 
+**Dataset citation:**
+
+Calef, F. (2021). *Mars 2020 Science Investigation CTX DEM Mosaic* [Dataset]. USGS Astrogeology Science Center.
+
+- [USGS dataset record](https://astrogeology.usgs.gov/search/map/mars_2020_science_investigation_ctx_dem_mosaic)
+- [Original DEM download](https://planetarymaps.usgs.gov/mosaic/mars2020_trn/CTX/ScienceInvestigationMaps_JPL/M20_JezeroCrater_CTXDEM_20m.tif)
 
 The terrain classifications and traversability costs are provisional research parameters. They should not be interpreted as validated rover safety limits.
-
-
 
 ## Experimental A* Route
 
